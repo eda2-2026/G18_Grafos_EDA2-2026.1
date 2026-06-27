@@ -1,0 +1,11 @@
+{
+  "_comment": "Taxas mockadas para testes offline. Fonte: CoinGecko formato simplificado.",
+  "_note": "BTC→ETH→USDT→BTC neste dataset tem produto ~1.003 (oportunidade artificial para testes)",
+  "rates": {
+    "BTC": { "ETH": 15.8, "USDT": 67000.0, "BNB": 142.3, "USD": 67000.0 },
+    "ETH": { "BTC": 0.0633, "USDT": 3500.0, "BNB": 9.01, "USD": 3500.0 },
+    "USDT": { "BTC": 0.0000149, "ETH": 0.000286, "BNB": 0.00521, "USD": 1.0 },
+    "BNB": { "BTC": 0.00703, "ETH": 0.111, "USDT": 475.0, "USD": 475.0 },
+    "USD": { "BTC": 0.0000149, "ETH": 0.000286, "USDT": 1.0, "BNB": 0.00210 }
+  }
+}
