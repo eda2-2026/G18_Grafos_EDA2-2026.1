@@ -10,8 +10,9 @@ MOCK_RATES_PATH = Path(__file__).resolve().parents[1] / "data" / "mock_rates.jso
 
 
 def weight(graph, src, dst) -> float:
-    """Lê o peso da aresta src->dst após a transformação logarítmica."""
-    return dict(graph.neighbors(src))[dst]
+    neighbors = dict(graph.neighbors(src))
+    assert dst in neighbors, f"aresta {src}->{dst} não encontrada"
+    return neighbors[dst]
 
 
 def test_rate_one_yields_zero_weight():
@@ -43,6 +44,14 @@ def test_zero_rate_is_ignored():
 def test_negative_rate_is_ignored():
     g = build_graph({"A": {"B": -1.5}})
     assert g.get_edges() == []
+
+
+def test_self_loop_is_ignored():
+    # Self-loop com taxa > 1 geraria peso negativo e falso positivo no Bellman-Ford
+    g = build_graph({"A": {"A": 1.5, "B": 1.0}})
+    assert len(g.get_edges()) == 1
+    assert "B" in dict(g.neighbors("A"))
+    assert "A" not in dict(g.neighbors("A"))
 
 
 def test_build_from_mock_has_correct_edge_count():

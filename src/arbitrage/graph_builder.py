@@ -19,7 +19,7 @@ def build_graph(rates: RateMatrix) -> CurrencyGraph:
     graph = CurrencyGraph()
     for src, row in rates.items():
         for dst, rate in row.items():
-            if rate > 0:
+            if rate > 0 and src != dst:
                 graph.add_rate(src, dst, rate)
     graph.transform_weights()
     return graph
