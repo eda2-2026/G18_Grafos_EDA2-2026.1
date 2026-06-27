@@ -89,3 +89,15 @@ def test_canonical_rotation_invariant():
 def test_returns_arb_opportunity_type():
     op = ArbitrageDetector(FakeClient(TRIANGLE)).detect(["A", "B", "C"])[0]
     assert isinstance(op, ArbOpportunity)
+
+
+def test_consistent_matrix_has_no_arbitrage():
+    # Matriz triangulada por preço (A=60000, B=2000, C=1 em USD): toda taxa cruzada
+    # é consistente -> nenhum ciclo lucrativo, mesmo com ruído de float.
+    price = {"A": 60000.0, "B": 2000.0, "C": 1.0}
+    rates = {
+        a: {b: price[a] / price[b] for b in price if b != a}
+        for a in price
+    }
+    ops = ArbitrageDetector(FakeClient(rates)).detect(["A", "B", "C"])
+    assert ops == []

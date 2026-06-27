@@ -122,6 +122,17 @@ def test_cache_expires_after_ttl(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def _fake_response(payload):
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return payload
+
+    return FakeResponse()
+
+
 def test_retries_then_raises_api_error(monkeypatch):
     client = CoinGeckoClient(base_url="http://test.local")
     attempts = {"n": 0}
@@ -134,7 +145,7 @@ def test_retries_then_raises_api_error(monkeypatch):
     monkeypatch.setattr("src.api.coingecko_client.time.sleep", lambda _: None)
 
     with pytest.raises(APIError):
-        client.get_rates(["bitcoin"])
+        client.get_rates(["BTC", "ETH"])
 
     assert attempts["n"] == 3  # 3 tentativas
 
@@ -143,24 +154,85 @@ def test_succeeds_after_transient_failure(monkeypatch):
     client = CoinGeckoClient(base_url="http://test.local")
     state = {"n": 0}
 
-    class FakeResponse:
-        def raise_for_status(self):
-            return None
-
-        def json(self):
-            return {"bitcoin": {"ethereum": 15.8}, "ethereum": {"bitcoin": 0.0633}}
-
     def flaky_get(*args, **kwargs):
         state["n"] += 1
         if state["n"] == 1:
             raise httpx.ConnectError("transient")
-        return FakeResponse()
+        return _fake_response({"bitcoin": {"usd": 60000.0}, "ethereum": {"usd": 2000.0}})
 
     monkeypatch.setattr("src.api.coingecko_client.httpx.get", flaky_get)
     monkeypatch.setattr("src.api.coingecko_client.time.sleep", lambda _: None)
 
-    matrix = client.get_rates(["bitcoin", "ethereum"])
+    matrix = client.get_rates(["BTC", "ETH"])
 
     assert state["n"] == 2  # falhou 1x, sucesso na 2ª
-    assert matrix["bitcoin"]["ethereum"] == pytest.approx(15.8)
-    assert "bitcoin" not in matrix["bitcoin"]  # sem self-loop
+    assert matrix["BTC"]["ETH"] == pytest.approx(30.0)   # 60000 / 2000
+    assert "BTC" not in matrix["BTC"]                    # sem self-loop
+
+
+# ---------------------------------------------------------------------------
+# Modo ao vivo: triangulação via USD (sem rede real)
+# ---------------------------------------------------------------------------
+
+LIVE_PAYLOAD = {
+    "bitcoin": {"usd": 60123.0},
+    "ethereum": {"usd": 1575.4},
+    "tether": {"usd": 0.998553},
+    "binancecoin": {"usd": 557.5},
+}
+
+
+def test_live_builds_cross_matrix(monkeypatch):
+    client = CoinGeckoClient(base_url="http://test.local")
+    monkeypatch.setattr(
+        "src.api.coingecko_client.httpx.get", lambda *a, **k: _fake_response(LIVE_PAYLOAD)
+    )
+
+    matrix = client.get_rates(["BTC", "ETH", "USDT", "BNB", "USD"])
+
+    assert "USD" in matrix
+    assert matrix["BTC"]["USD"] == pytest.approx(60123.0)
+    assert matrix["USD"]["BTC"] == pytest.approx(1 / 60123.0)
+    assert matrix["BTC"]["ETH"] == pytest.approx(60123.0 / 1575.4)
+    for src, row in matrix.items():
+        assert src not in row  # sem self-loops
+
+
+def test_live_requests_mapped_ids(monkeypatch):
+    client = CoinGeckoClient(base_url="http://test.local")
+    captured = {}
+
+    def capturing_get(url, *, params, headers, timeout):
+        captured["params"] = params
+        return _fake_response(LIVE_PAYLOAD)
+
+    monkeypatch.setattr("src.api.coingecko_client.httpx.get", capturing_get)
+    client.get_rates(["BTC", "ETH", "USD"])
+
+    assert captured["params"]["vs_currencies"] == "usd"
+    ids = captured["params"]["ids"].split(",")
+    assert "bitcoin" in ids and "ethereum" in ids
+    assert "USD" not in captured["params"]["ids"]  # âncora não é id
+
+
+def test_live_drops_unmapped_symbols(monkeypatch):
+    client = CoinGeckoClient(base_url="http://test.local")
+    monkeypatch.setattr(
+        "src.api.coingecko_client.httpx.get",
+        lambda *a, **k: _fake_response({"bitcoin": {"usd": 60000.0}}),
+    )
+
+    matrix = client.get_rates(["BTC", "FOOBAR"])
+
+    assert "BTC" in matrix
+    assert "FOOBAR" not in matrix
+
+
+def test_no_mappable_symbols_returns_empty(monkeypatch):
+    client = CoinGeckoClient(base_url="http://test.local")
+
+    def must_not_call(*a, **k):
+        raise AssertionError("não deveria chamar a rede sem símbolos mapeáveis")
+
+    monkeypatch.setattr("src.api.coingecko_client.httpx.get", must_not_call)
+    assert client.get_rates(["FOOBAR"]) == {}
