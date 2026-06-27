@@ -7,6 +7,10 @@ name = "crypto-arbitrage-graph"
 version = "0.1.0"
 description = "Detecção de arbitragem triangular via Bellman-Ford em grafo de câmbio"
 requires-python = ">=3.11"
+dependencies = [
+    "rich>=13.0",
+    "networkx>=3.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
