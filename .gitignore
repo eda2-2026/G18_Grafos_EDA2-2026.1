@@ -10,3 +10,4 @@ dist/
 .ipynb_checkpoints/
 docs/benchmark_results.md
 .claude/
+CLAUDE.md
