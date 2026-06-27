@@ -12,6 +12,9 @@ from src.graph.bellman_ford import bellman_ford
 if TYPE_CHECKING:
     from src.api.coingecko_client import CoinGeckoClient, MockClient
 
+# Abaixo deste lucro (%) é ruído numérico de float (matriz consistente), não arbitragem.
+PROFIT_EPSILON = 1e-6
+
 
 @dataclass
 class ArbOpportunity:
@@ -50,6 +53,8 @@ class ArbitrageDetector:
             closed = list(key) + [key[0]]   # ciclo fechado normalizado
             rates_used = [rates[closed[i]][closed[i + 1]] for i in range(len(closed) - 1)]
             profit_pct = (math.prod(rates_used) - 1) * 100
+            if profit_pct < PROFIT_EPSILON:
+                continue  # ruído de float numa matriz consistente, não é lucro real
             opportunities.append(
                 ArbOpportunity(cycle=closed, profit_pct=profit_pct, rates_used=rates_used)
             )

@@ -9,5 +9,7 @@ dist/
 *.egg-info/
 .ipynb_checkpoints/
 docs/benchmark_results.md
+arbitrage_graph.html
+lib/
 .claude/
 CLAUDE.md

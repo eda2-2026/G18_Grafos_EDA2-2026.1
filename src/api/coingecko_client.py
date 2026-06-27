@@ -23,6 +23,25 @@ CACHE_TTL_SECONDS = 60.0
 MAX_RETRIES = 3
 REQUEST_TIMEOUT = 10.0
 
+# Moeda âncora (fiat): seu preço em USD é 1.0 por definição.
+ANCHOR = "USD"
+
+# Símbolo -> id da CoinGecko. A API usa ids ("bitcoin"), não símbolos ("BTC").
+SYMBOL_TO_ID = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "USDT": "tether",
+    "BNB": "binancecoin",
+    "USDC": "usd-coin",
+    "SOL": "solana",
+    "XRP": "ripple",
+    "ADA": "cardano",
+    "DOGE": "dogecoin",
+}
+
+# Símbolos que o modo ao vivo consegue resolver.
+SUPPORTED_LIVE = set(SYMBOL_TO_ID) | {ANCHOR}
+
 # data/mock_rates.json a partir de src/api/coingecko_client.py
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 MOCK_RATES_PATH = _REPO_ROOT / "data" / "mock_rates.json"
@@ -30,6 +49,42 @@ MOCK_RATES_PATH = _REPO_ROOT / "data" / "mock_rates.json"
 
 class APIError(Exception):
     """Erro ao buscar taxas após esgotar todas as tentativas."""
+
+
+def _filter_matrix(symbol_keyed: dict, symbols: list[str]) -> RateMatrix:
+    """Filtra uma matriz já indexada por símbolo para os símbolos pedidos, sem self-loops."""
+    matrix: RateMatrix = {}
+    requested = set(symbols)
+    for src in symbols:
+        row = symbol_keyed.get(src, {})
+        matrix[src] = {
+            dst: float(rate)
+            for dst, rate in row.items()
+            if dst in requested and dst != src
+        }
+    return matrix
+
+
+def _build_cross_matrix(data: dict, symbols: list[str]) -> RateMatrix:
+    """Constrói a matriz de taxas cruzadas triangulando pelo USD.
+
+    `data` é a resposta da CoinGecko no formato {id: {"usd": preço}}. O preço de 1 A em USD
+    e de 1 B em USD dão a taxa A->B = usd[A] / usd[B] (1 A vira usd[A]/usd[B] unidades de B).
+    Símbolos sem preço disponível são descartados.
+    """
+    usd_price: dict[str, float] = {}
+    for symbol in symbols:
+        if symbol == ANCHOR:
+            usd_price[symbol] = 1.0
+        elif symbol in SYMBOL_TO_ID:
+            row = data.get(SYMBOL_TO_ID[symbol])
+            if row and row.get("usd") is not None:
+                usd_price[symbol] = float(row["usd"])
+
+    matrix: RateMatrix = {}
+    for a, pa in usd_price.items():
+        matrix[a] = {b: pa / pb for b, pb in usd_price.items() if b != a}
+    return matrix
 
 
 class CoinGeckoClient:
@@ -58,9 +113,17 @@ class CoinGeckoClient:
         self._cache.clear()
 
     def _fetch(self, symbols: list[str]) -> RateMatrix:
-        """Faz a requisição com retry; levanta APIError se todas falharem."""
+        """Busca os preços em USD (com retry) e triangula a matriz cruzada.
+
+        Mapeia os símbolos para ids da CoinGecko; símbolos sem id são ignorados.
+        Levanta APIError se todas as tentativas falharem.
+        """
+        ids = [SYMBOL_TO_ID[s] for s in symbols if s in SYMBOL_TO_ID]
+        if not ids:
+            return {}
+
         url = f"{self._base_url}/simple/price"
-        params = {"ids": ",".join(symbols), "vs_currencies": ",".join(symbols)}
+        params = {"ids": ",".join(ids), "vs_currencies": "usd"}
         headers = {"x-cg-demo-api-key": self._api_key} if self._api_key else {}
 
         last_error: Exception | None = None
@@ -68,7 +131,7 @@ class CoinGeckoClient:
             try:
                 response = httpx.get(url, params=params, headers=headers, timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
-                return self._parse(response.json(), symbols)
+                return _build_cross_matrix(response.json(), symbols)
             except httpx.HTTPError as exc:
                 last_error = exc
                 if attempt < MAX_RETRIES - 1:
@@ -77,19 +140,6 @@ class CoinGeckoClient:
         raise APIError(
             f"Falha ao buscar taxas após {MAX_RETRIES} tentativas para {symbols}"
         ) from last_error
-
-    def _parse(self, data: dict, symbols: list[str]) -> RateMatrix:
-        """Filtra a resposta da API para os símbolos pedidos, sem self-loops."""
-        matrix: RateMatrix = {}
-        requested = set(symbols)
-        for src in symbols:
-            row = data.get(src, {})
-            matrix[src] = {
-                dst: float(rate)
-                for dst, rate in row.items()
-                if dst in requested and dst != src
-            }
-        return matrix
 
 
 class MockClient(CoinGeckoClient):
@@ -111,4 +161,4 @@ class MockClient(CoinGeckoClient):
         return self._rates
 
     def _fetch(self, symbols: list[str]) -> RateMatrix:
-        return self._parse(self._load(), symbols)
+        return _filter_matrix(self._load(), symbols)
