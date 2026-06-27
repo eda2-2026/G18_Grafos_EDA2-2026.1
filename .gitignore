@@ -9,3 +9,4 @@ dist/
 *.egg-info/
 .ipynb_checkpoints/
 docs/benchmark_results.md
+.claude/
