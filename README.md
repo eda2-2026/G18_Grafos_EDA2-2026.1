@@ -101,18 +101,56 @@ cp .env.example .env
 ### Executar
 
 ```bash
-# Detecção ao vivo
-python -m src.arbitrage.detector
+python -m src --mock                          # local: demo de arbitragem (dataset fixo)
+python -m src --symbols BTC ETH USDT BNB USD  # ao vivo: preços reais da CoinGecko
+python -m src --mock --graph                  # grafo interativo no navegador (pyvis)
+python -m src --mock --watch --interval 5     # monitoramento contínuo (rich.live)
 
-# Benchmark
-python -m src.benchmark.runner
+python -m src.benchmark.runner                # benchmark próprio vs NetworkX
 ```
+
+> No modo ao vivo os símbolos são mapeados automaticamente para ids da CoinGecko
+> (BTC→bitcoin, …). Como a API fornece um preço médio único por moeda, a matriz fica
+> consistente e ao vivo **não há arbitragem** (mercado eficiente) — o `--mock` existe
+> justamente para demonstrar a detecção.
 
 ### Testes
 
 ```bash
 pytest tests/ -v
 ```
+
+---
+
+## Resultados
+
+### Exemplo de output da CLI
+
+```text
+$ python -m src --mock
+
+╭─ Oportunidades de Arbitragem Triangular — 2026-06-27 20:08:42 ───────────────╮
+│                                                                              │
+│  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓  │
+│  ┃ Ciclo                        ┃          Lucro ┃ Taxas                  ┃  │
+│  ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩  │
+│  │ BNB → USDT → BNB             │       +147.48% │ 475 / 0.00521          │  │
+│  └──────────────────────────────┴────────────────┴────────────────────────┘  │
+│                                                                              │
+╰─────────────────────────────────── BTC, ETH, USDT, BNB, USD  ·  fonte: mock ─╯
+```
+
+### Análise e benchmark
+
+- **[`notebooks/analysis.ipynb`](notebooks/analysis.ipynb)** — análise técnica: grafo de câmbio
+  interativo, heatmap das taxas, ciclos de arbitragem destacados e curva de complexidade
+  (tempo × tamanho do grafo).
+- **[`docs/benchmark_results.md`](docs/benchmark_results.md)** — Bellman-Ford próprio vs NetworkX.
+
+**Resumo do benchmark:** as duas implementações são igualmente corretas. A própria **vence em
+grafos minúsculos** (≤ 5 nós) e usa ~3× menos memória, mas o **NetworkX escala muito melhor**
+(laços em C) — em 50 nós é ~300× mais rápido. Conclusão: implementação própria para o escopo
+acadêmico (poucas moedas, transparência); biblioteca madura para produção em larga escala.
 
 ---
 
@@ -138,7 +176,7 @@ O módulo `src/benchmark/runner.py` compara:
 - Métricas: tempo de execução (ms), memória (KB), ciclos encontrados
 - Variação de carga: 5, 10, 20, 50 moedas no grafo
 
-Resultados serão publicados em `docs/benchmark_results.md`.
+Resultados completos (com análise) em [`docs/benchmark_results.md`](docs/benchmark_results.md).
 
 ---
 
