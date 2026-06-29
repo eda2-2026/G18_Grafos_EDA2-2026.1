@@ -4,6 +4,8 @@ Detecção de arbitragem triangular em mercados de criptomoedas usando Teoria de
 
 Projeto acadêmico — Estrutura de Dados 2 (EDA2), 2026.1.
 
+## Link da Apresentação:
+https://youtu.be/Igex30aI-gc
 ---
 
 ## Conceito
